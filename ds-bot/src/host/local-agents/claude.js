@@ -41,7 +41,7 @@ export class ClaudeEngine {
   }
 
   async listModels() {
-    return ['default', 'opus', 'sonnet', 'haiku'].map(id => ({ id, name: id === 'default' ? 'CLI default' : id }))
+    return ['default', ...(this.engine.models ?? ['opus', 'sonnet', 'haiku'])].map(id => ({ id, name: id === 'default' ? 'CLI default' : id }))
   }
 
   async close() {

@@ -19,6 +19,8 @@ const SIGN_IN = {
   'devin-cli': 'devin auth login',
   'claude-code': 'claude',
   'codex-cli': 'codex login',
+  'ducc': 'ducc',
+  'ducx': 'ducx login',
   'cursor-cli': 'cursor-agent login',
   'gemini-cli': 'gemini',
   'cline': 'cline auth',

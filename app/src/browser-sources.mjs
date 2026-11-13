@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { copyFile, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { homedir, platform, tmpdir } from 'node:os'
-import { basename, dirname, join, win32 } from 'node:path'
+import { basename, dirname, join, relative, win32 } from 'node:path'
 
 // Kinds we can harvest: Chromium-family through their own exe, Firefox through its plain db.
 const KIND_ORDER = ['chrome', 'edge', 'brave', 'chromium', 'firefox']
@@ -242,8 +242,11 @@ export async function cloneCookieStore(source, workDir) {
     const root = dirname(source.profilePath)
     jobs.push({ from: join(root, 'Local State'), to: join(workDir, 'Local State'), required: true })
     const profile = basename(source.profilePath)
+    // A profile that keeps Cookies at the profile root (the pre-Network layout) must stay there:
+    // copied into Network/, the browser finds no store and answers with no cookies at all.
+    const storeDir = relative(source.profilePath, dirname(source.cookieDb))
     for (const f of ['Cookies', 'Cookies-journal', 'Cookies-wal', 'Cookies-shm']) {
-      jobs.push({ from: join(dirname(source.cookieDb), f), to: join(workDir, profile, 'Network', f), required: f === 'Cookies' })
+      jobs.push({ from: join(dirname(source.cookieDb), f), to: join(workDir, profile, storeDir, f), required: f === 'Cookies' })
     }
   }
   const copied = []
@@ -404,7 +407,7 @@ export function appBoundRows(dbPath) {
 export async function harvestCookies(source, workDir) {
   await cloneCookieStore(source, workDir)
   if (source.engine === 'firefox') return harvestFirefox(workDir)
-  const census = appBoundRows(join(workDir, basename(source.profilePath), 'Network', 'Cookies'))
+  const census = appBoundRows(join(workDir, basename(source.profilePath), relative(source.profilePath, dirname(source.cookieDb)), 'Cookies'))
   if (census && census.readable === 0 && census.locked.length > 0) {
     const error = new Error(`${census.locked.length} cookies locked by app-bound encryption`)
     error.code = 'app-bound'

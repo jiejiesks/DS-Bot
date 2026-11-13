@@ -17,6 +17,12 @@ const CLIS = {
   'devin-cli': { name: 'Devin CLI', kind: 'acp', command: 'devin', args: ['acp'], version: ['--version'], signedIn: { args: ['auth', 'status'] } },
   'claude-code': { name: 'Claude Code', kind: 'claude', command: 'claude', args: [], version: ['--version'], signedIn: { file: ['.claude', '.credentials.json'] } },
   'codex-cli': { name: 'Codex CLI', kind: 'codex', command: 'codex', args: ['app-server', '--listen', 'stdio://'], version: ['--version'], signedIn: { args: ['login', 'status'] } },
+  // The gateway takes its own model names, not Claude Code's opus/sonnet/haiku aliases (503: no channel for "sonnet").
+  'ducc': {
+    name: 'Ducc', kind: 'claude', command: 'ducc', args: [], version: ['--version'],
+    models: ['Opus 5', 'Opus 5.5', 'Claude Sonnet 5.5', 'Claude Haiku 5.5'],
+  },
+  'ducx': { name: 'Ducx', kind: 'codex', command: 'ducx', args: ['app-server', '--listen', 'stdio://'], version: ['--version'] },
   'opencode': { name: 'OpenCode', kind: 'acp', command: 'opencode', args: ['acp'], version: ['--version'] },
   'cursor-cli': { name: 'Cursor CLI', kind: 'acp', command: 'cursor-agent', args: ['acp'], version: ['--version'], signedIn: { args: ['status'] } },
   'gemini-cli': { name: 'Gemini CLI', kind: 'acp', command: 'gemini', args: ['--acp'], version: ['--version'], signedIn: { file: ['.gemini', 'oauth_creds.json'] } },

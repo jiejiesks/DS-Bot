@@ -16638,6 +16638,8 @@ var AGENT_BADGES = {
   "devin-cli": ["DV", "violet"],
   "claude-code": ["CC", "tangerine"],
   "codex-cli": ["CX", "green"],
+  "ducc": ["DC", "tangerine"],
+  "ducx": ["DX", "green"],
   "opencode": ["OC", "blue"],
   "cursor-cli": ["CU", "magenta"],
   "gemini-cli": ["GM", "yellow"],
