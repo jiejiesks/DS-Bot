@@ -21,6 +21,21 @@ const SEND_ATTEMPTS = 4
 const TYPING_MS = 4_000
 const NUMBERS = /^\s*\d+(\s+\d+)*\s*$/
 
+// DSH and DS Bot add context to a running turn as user messages: the clock, runtime
+// context, a memory recall. A snapshot joins the turn it was added to and asks nothing
+// itself, so the chat whose message started the turn still owns it (#1735).
+const isContextSnapshot = source => source?.form === 'snapshot'
+const textOf = (content) => {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n')
+}
+// A scheduled task's change notice says that a task was created, edited or removed and
+// needs no action; it is not a delivery of the task, so it is not a second source
+// (#1718). The delivery itself, "[SCHEDULE REMINDER]", is a real message and still
+// withdraws the origin.
+const isScheduleNotice = (source, data) => source?.kind === 'schedule' && textOf(data?.content).startsWith('[SCHEDULE CHANGE]')
+
 const secretField = key => key.replace(/[A-Z]/g, char => `_${char}`).toUpperCase()
 
 export function install(rt) {
@@ -1444,6 +1459,10 @@ export function install(rt) {
       const source = event.data?.source
       const imOrigin = source?.imOrigin
       const rpcId = source?.rpcId
+      // Context that joins the turn without asking anything claims nothing and withdraws
+      // nothing. It returns before the pending reset is read, so a lone note in a group's
+      // late turn cannot use the reset up without applying it (#1735, #1718).
+      if (isContextSnapshot(source) || isScheduleNotice(source, event.data)) return
       // A late member result or part-switch handoff continues the work the chat asked for;
       // any other first message starts a fresh turn, which clears the previous turn's origin.
       if (pendingReset.delete(session.id) && !(typeof imOrigin === 'string' || (source?.kind === SOURCE_KIND && source.role === 'post'))) resetOrigin(session.id)

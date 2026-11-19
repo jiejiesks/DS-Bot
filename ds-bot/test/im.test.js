@@ -731,6 +731,131 @@ test('reply origin: another source in the same turn withdraws the IM origin', as
   assert.equal(s.fake.sent.length, 0, 'a mixed turn sends nothing')
 })
 
+// The clock, runtime context and memory recall append a snapshot to the turn, before or
+// after the chat's own message (#1735).
+for (const group of [false, true]) {
+  for (const before of [false, true]) {
+    test(`reply origin: a context snapshot ${before ? 'before' : 'after'} the chat's message keeps the IM ${group ? 'group' : 'direct'} origin`, async (t) => {
+      const s = await start()
+      t.after(s.stop)
+      const { one } = await pairedConn(s)
+      if (group) {
+        one.chats.g1 = { kind: 'group', title: 'G', target: { roomId: 'r1' }, at: 1 }
+        await s.rt.save()
+        await gm(s, 'u1', 'hello group')
+      } else {
+        await dm(s, 'u1', 'hi')
+      }
+      const sessionId = group ? 'r1' : 'a'
+      const snapshots = () => {
+        for (const kind of ['runtime-context', 'time-context', 'ds-bot-time-context', 'ds-bot-memory-recall']) {
+          s.emitEvent(sessionId, 'user/message', { source: { kind, form: 'snapshot', sections: [] }, content: [{ type: 'text', text: 'context' }] })
+        }
+      }
+      if (before) {
+        s.emitEvent(sessionId, 'turn/start', { turn: s.prompts.length })
+        snapshots()
+        s.emitEvent(sessionId, 'user/message', { source: { kind: 'user', rpcId: s.prompts.at(-1).requestId }, content: [{ type: 'text', text: 'from the chat' }] })
+      } else {
+        s.imTurn(sessionId)
+        snapshots()
+      }
+      await s.flush()
+      s.fake.sent.length = 0
+      if (group) s.rt.logRoom(s.rt.roomOf('r1'), { who: 'Writer', botId: 'b', text: 'reply' })
+      else s.emitEvent('a', 'assistant/message', { message: { content: [{ type: 'text', text: 'reply' }] } })
+      await s.flush()
+      assert.deepEqual(s.fake.sent.map(entry => [entry.chat.key, entry.text]), [group ? ['g1', '**Writer**: reply'] : ['dm-u1', 'reply']])
+    })
+  }
+}
+
+// A scheduled task's change notice reports the task, it does not deliver it (#1718).
+test('reply origin: a scheduled task change notice does not withdraw the IM origin', async (t) => {
+  const s = await start()
+  t.after(s.stop)
+  await pairedConn(s)
+  await dm(s, 'u1', 'hi')
+  s.imTurn('a')
+  for (const change of ['created', 'updated']) {
+    s.emitEvent('a', 'user/message', {
+      source: { kind: 'schedule' },
+      content: [{ type: 'text', text: `[SCHEDULE CHANGE]\nA scheduled task involving this session was changed outside this session. This notice is not a delivery of the task and needs no action.\nchange: ${change}\nschedule_id_json: "schedule-1"\nschedule_title_json: "Bake bread"` }],
+    })
+  }
+  s.fake.sent.length = 0
+  s.emitEvent('a', 'assistant/message', { message: { content: [{ type: 'text', text: 'reply' }] } })
+  await s.flush()
+  assert.deepEqual(s.fake.sent.map(entry => entry.chat.key), ['dm-u1'])
+})
+
+// The notice must not hide the delivery itself: a due task is a real message to the
+// Session, and the turn it joins is not the IM chat's to answer.
+test('reply origin: a scheduled task delivery still withdraws the IM origin', async (t) => {
+  const s = await start()
+  t.after(s.stop)
+  await pairedConn(s)
+  await dm(s, 'u1', 'hi')
+  s.imTurn('a')
+  s.emitEvent('a', 'user/message', {
+    source: { kind: 'schedule' },
+    content: [{ type: 'text', text: '[SCHEDULE REMINDER]\nreminder_prompt_json: "Bake bread"' }],
+  })
+  s.emitEvent('a', 'assistant/message', { message: { content: [{ type: 'text', text: 'reply' }] } })
+  await s.flush()
+  assert.equal(s.fake.sent.length, 0, 'a turn a due task joined sends nothing')
+})
+
+// A lone note must not use up a group's pending reset without applying it (#1725 review).
+test('reply origin: a context snapshot does not keep a group chat after a Web message', async (t) => {
+  const s = await start()
+  t.after(s.stop)
+  const { one } = await pairedConn(s)
+  one.chats.g1 = { kind: 'group', title: 'G', target: { roomId: 'r1' }, at: 1 }
+  await s.rt.save()
+  await gm(s, 'u1', 'hello group')
+  s.imTurn('r1')
+  s.emitEvent('r1', 'turn/end', {})
+  s.emitEvent('r1', 'turn/start', {})
+  s.emitEvent('r1', 'user/message', { source: { kind: 'time-context', form: 'snapshot', sections: [] }, content: [{ type: 'text', text: 'Current time: now' }] })
+  s.emitEvent('r1', 'user/message', { source: { kind: 'web' }, content: [{ type: 'text', text: 'typed in the browser' }] })
+  await s.flush()
+  s.fake.sent.length = 0
+  s.rt.logRoom(s.rt.roomOf('r1'), { who: 'Writer', botId: 'b', text: 'answer to the browser' })
+  await s.flush()
+  assert.equal(s.fake.sent.length, 0)
+})
+
+test('reply origin: a context snapshot does not open a Web turn to IM', async (t) => {
+  const s = await start()
+  t.after(s.stop)
+  await pairedConn(s)
+  await dm(s, 'u1', 'hi')
+  s.imTurn('a')
+  s.emitEvent('a', 'turn/end', {})
+  s.emitEvent('a', 'turn/start', {})
+  s.emitEvent('a', 'user/message', { source: { kind: 'web' }, content: [{ type: 'text', text: 'typed in the browser' }] })
+  s.emitEvent('a', 'user/message', { source: { kind: 'time-context', form: 'snapshot', sections: [] }, content: [{ type: 'text', text: 'Current time: now' }] })
+  s.emitEvent('a', 'assistant/message', { message: { content: [{ type: 'text', text: 'answer to the browser' }] } })
+  await s.flush()
+  assert.equal(s.fake.sent.length, 0)
+})
+
+test('reply origin: a context note put in before the IM message still answers its chat', async (t) => {
+  const s = await start()
+  t.after(s.stop)
+  await pairedConn(s)
+  await dm(s, 'u1', 'hi')
+  const requestId = s.prompts.at(-1)?.requestId
+  s.emitEvent('a', 'turn/start', { turn: 1 })
+  s.emitEvent('a', 'user/message', { source: { kind: 'ds-bot-memory-update', form: 'snapshot' }, content: [{ type: 'text', text: 'memory' }] })
+  s.emitEvent('a', 'user/message', { source: { kind: 'user', rpcId: requestId }, content: [{ type: 'text', text: 'from the chat' }] })
+  s.fake.sent.length = 0
+  s.emitEvent('a', 'assistant/message', { message: { content: [{ type: 'text', text: 'reply' }] } })
+  await s.flush()
+  assert.deepEqual(s.fake.sent.map(entry => entry.chat.key), ['dm-u1'])
+})
+
 test('reply origin: the turn ending stops later output from going out', async (t) => {
   const s = await start()
   t.after(s.stop)
